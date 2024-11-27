@@ -1,310 +1,458 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { Firestore } from '@google-cloud/firestore';
 
-// Definir una interfaz para el técnico
-interface Technician {
-  id: string;
-  branchOffice: string; // Asegúrate de que esta propiedad existe en Firestore
-}
-
-interface User {
-  id: string;
-  branchOffice: string;
-  userType: string; // Asegúrate de que esta propiedad está incluida
-}
-
 @Injectable()
 export class TestsService {
   private firestore: Firestore;
-  private activityNumberCounter = 1; // Contador para el activityNumber
-  private assignmentNumberCounter = 1; // Contador para el assignmentNumber
 
   constructor(@Inject('FIREBASE_ADMIN') private readonly firebaseAdmin: any) {
     this.firestore = this.firebaseAdmin.firestore();
   }
 
-  async getCollectionData(collectionName: string) {
-    const snapshot = await this.firestore.collection(collectionName).get();
-    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    return data;
+  // Datos de ejemplo
+  dimensions = [
+    {
+      id: 'efficientResourceManagement',
+      name: 'Gestión Eficiente de Recursos',
+      description:
+        'Optimización en el uso y control de los recursos necesarios para las tareas.',
+      associateCalculations: [
+        'avgSupplyCostTask',
+        'totalResourcesUsed',
+        'tasksResourceCompliant',
+        'supplyWastePerTask',
+        'tasksWithoutOveruse',
+        'supplyConsumedTaskType',
+        'totalSupplyWaste',
+        'mostWastedResources',
+      ],
+    },
+    {
+      id: 'operationalProactivity',
+      name: 'Proactividad Operativa',
+      description:
+        'Medición de la actividad y eficiencia operativa de los empleados.',
+      associateCalculations: [
+        'activeTimeEmployees',
+        'idleTimeEmployees',
+        'activeEmployeeCount',
+      ],
+    },
+    {
+      id: 'taskCompliance',
+      name: 'Cumplimiento de Tareas',
+      description:
+        'Evaluación del desempeño en términos de tiempo y finalización de tareas.',
+      associateCalculations: [
+        'onTimeStartTasks',
+        'avgStartDelay',
+        'avgTravelTimeTasks',
+        'avgCompletionDeviation',
+        'avgExecutionTime',
+        'tasksOnTime',
+      ],
+    },
+    {
+      id: 'laborCompliance',
+      name: 'Cumplimiento Laboral',
+      description:
+        'Supervisión del cumplimiento de horarios y jornadas laborales por parte de los técnicos.',
+      associateCalculations: [
+        'techniciansOnTimeDeparture',
+        'techniciansOnTimeEntry',
+        'techniciansFullDay',
+      ],
+    },
+  ];
+
+  calculations = [
+    {
+      id: 'avgSupplyCostTask',
+      name: 'Costo promedio de recursos por tarea',
+      description: 'Costo promedio de recursos para instalaciones y traslados.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 455, max: 515 },
+    },
+    {
+      id: 'totalResourcesUsed',
+      name: 'Cantidad de recursos utilizados',
+      description: 'Cantidad total de recursos utilizados en las tareas.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 0, max: 0 },
+    },
+    {
+      id: 'tasksResourceCompliant',
+      name: 'Tareas con uso adecuado de recursos',
+      description: 'Número de tareas con uso adecuado de recursos.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 2, max: 4 },
+    },
+    {
+      id: 'supplyWastePerTask',
+      name: 'Desperdicio de suministros por tarea',
+      description: 'Cantidad de suministros desperdiciados por cada tarea.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 0, max: 20 },
+    },
+    {
+      id: 'tasksWithoutOveruse',
+      name: 'Tareas completadas sin sobreconsumo',
+      description:
+        'Número de tareas completadas sin sobreconsumo de suministros.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 1, max: 3 },
+    },
+    {
+      id: 'supplyConsumedTaskType',
+      name: 'Suministros consumidos por tipo de tarea',
+      description:
+        'Cantidad de suministros consumidos agrupados por tipo de tarea.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 0, max: 0 },
+    },
+    {
+      id: 'activeTimeEmployees',
+      name: 'Tiempo de actividad de empleados',
+      description: 'Tiempo total de actividad de los empleados en minutos.',
+      dimension: 'operationalProactivity',
+      range: { min: 390, max: 450 },
+    },
+    {
+      id: 'idleTimeEmployees',
+      name: 'Tiempo de inactividad de empleados',
+      description: 'Tiempo total de inactividad de los empleados en minutos.',
+      dimension: 'operationalProactivity',
+      range: { min: 0, max: 60 },
+    },
+    {
+      id: 'activeEmployeeCount',
+      name: 'Cantidad de empleados activos',
+      description: 'Cantidad de empleados activos en el período analizado.',
+      dimension: 'operationalProactivity',
+      range: { min: 3, max: 5 },
+    },
+    {
+      id: 'onTimeStartTasks',
+      name: 'Tareas iniciadas puntualmente',
+      description:
+        'Número de tareas iniciadas puntualmente dentro del período analizado.',
+      dimension: 'taskCompliance',
+      range: { min: 2, max: 4 },
+    },
+    {
+      id: 'avgStartDelay',
+      name: 'Retraso promedio en inicio de tareas',
+      description: 'Tiempo promedio de retraso en el inicio de las tareas.',
+      dimension: 'taskCompliance',
+      range: { min: 0, max: 30 },
+    },
+    {
+      id: 'avgTravelTimeTasks',
+      name: 'Desplazamiento promedio entre tareas',
+      description: 'Tiempo promedio de desplazamiento entre tareas en minutos.',
+      dimension: 'taskCompliance',
+      range: { min: 5, max: 35 },
+    },
+    {
+      id: 'avgCompletionDeviation',
+      name: 'Desviación promedio en finalización',
+      description:
+        'Tiempo promedio de finalización en comparación con el estimado.',
+      dimension: 'taskCompliance',
+      range: { min: 15, max: 60 },
+    },
+    {
+      id: 'avgExecutionTime',
+      name: 'Tiempo promedio de ejecución',
+      description: 'Tiempo promedio empleado en la ejecución de tareas.',
+      dimension: 'taskCompliance',
+      range: { min: 10, max: 120 },
+    },
+    {
+      id: 'tasksOnTime',
+      name: 'Tareas completadas en tiempo planificado',
+      description:
+        'Número de tareas completadas dentro del tiempo planificado.',
+      dimension: 'taskCompliance',
+      range: { min: 2, max: 4 },
+    },
+    {
+      id: 'techniciansOnTimeDeparture',
+      name: 'Técnicos que cumplen con horarios de salida',
+      description:
+        'Cantidad de técnicos que cumplieron con los horarios de salida establecidos.',
+      dimension: 'laborCompliance',
+      range: { min: 3, max: 5 },
+    },
+    {
+      id: 'techniciansOnTimeEntry',
+      name: 'Técnicos que cumplen con horarios de entrada',
+      description:
+        'Cantidad de técnicos que cumplieron con los horarios de entrada establecidos.',
+      dimension: 'laborCompliance',
+      range: { min: 2, max: 4 },
+    },
+    {
+      id: 'techniciansFullDay',
+      name: 'Técnicos con jornada completa cumplida',
+      description:
+        'Número de técnicos que cumplieron con la jornada laboral completa.',
+      dimension: 'laborCompliance',
+      range: { min: 2, max: 4 },
+    },
+    {
+      id: 'totalSupplyWaste',
+      name: 'Desperdicio total de suministros',
+      description:
+        'Cantidad total de suministros desperdiciados en las operaciones.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 0, max: 0 },
+    },
+    {
+      id: 'mostWastedResources',
+      name: 'Recursos más desperdiciados',
+      description: 'Recursos con mayor cantidad de desperdicio acumulado.',
+      dimension: 'efficientResourceManagement',
+      range: { min: 0, max: 0 },
+    },
+  ];
+
+  employees = {
+    eDXAk8wwiPluA7671oj6: [
+      'ElrdDKtOoFclPNbWlwAE1SlSpWr2',
+      '00XQb2bBgpdnCkLhPNifWAVUhqS2',
+      '2cvihaIvdvY9IjX7EQtXs7It2Qt2',
+      '2W1KefDwCqccZUt3wkM6Doe2jcm2',
+      '7Z76RjV0lFYBEySO0GI7c3R3q3H3',
+    ],
+    '2OIW6pbuHYEjywnPR41N': [
+      'Dts41LI94HN4IaormUR0FehzT6y1',
+      'IX7tt0aQyeds0usj6YfbREiCPZE2',
+      'EPIMzemadlg3OyGJawRK0LpSDdr1',
+      'Eyv6R5j2EPh8QQDbDEKLTQ8w6xy1',
+    ],
+  };
+
+  private generateRandomValue(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  // Obtener técnico por ID
-  async getTechnicianById(userId: string): Promise<Technician> {
-    const userRef = await this.firestore.collection('users').doc(userId).get();
-    if (!userRef.exists) {
-      throw new Error(`Técnico con ID ${userId} no encontrado.`);
+  async seedDimensions(): Promise<void> {
+    for (const dimension of this.dimensions) {
+      await this.firestore
+        .collection('dimensions')
+        .doc(dimension.id)
+        .set(dimension);
     }
-    return { id: userRef.id, ...userRef.data() } as Technician;
+    console.log('Dimensiones cargadas correctamente.');
   }
 
-  // Obtener admin por branchOffice
-  async getAdminByBranchOffice(branchOfficeId: string) {
-    // Busca todos los usuarios en la sucursal
-    const usersInBranch = await this.firestore
-      .collection('users')
-      .where('branchOffice', '==', branchOfficeId)
-      .get();
+  async seedCalculations(): Promise<void> {
+    for (const calculation of this.calculations) {
+      const calcRef = this.firestore
+        .collection('calculations')
+        .doc(calculation.id);
 
-    // Filtrar solo administradores
-    const admins = usersInBranch.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() })) // Asegúrate de incluir todos los campos del documento
-      .filter((user: User) => user.userType === 'XTz672YroECmH05WXvGs'); // Filtrar por userType
-
-    // Verificar si se encontraron administradores
-    if (admins.length === 0) {
-      throw new Error(
-        `No se encontró un administrador para la sucursal ${branchOfficeId}.`,
-      );
-    }
-
-    return admins[0]; // Retorna el primer admin encontrado
-  }
-
-  async generateActivitiesForMultipleUsers(startDate: Date, endDate: Date) {
-    const users = await this.getCollectionData('users'); // Obtener todos los usuarios
-    const technicians = users.filter(
-      (user: User) => user.userType === 'iA9m6EFG56ygs32OOYsI',
-    ); // Filtrar técnicos
-
-    const results = [];
-
-    for (const technician of technicians) {
-      const userResult = await this.generateActivitiesForUserInRange(
-        technician.id,
-        startDate,
-        endDate,
-      );
-      results.push({
-        userId: technician.id,
-        activities: userResult.activities,
-        assignments: userResult.assignments,
+      // Crear cálculo principal
+      await calcRef.set({
+        name: calculation.name,
+        description: calculation.description,
+        dimension: calculation.dimension,
       });
-    }
 
-    return {
-      message: 'Actividades y asignaciones generadas para múltiples usuarios',
-      results,
-    };
-  }
+      // Inicializar acumuladores para global
+      let globalTotal = 0;
+      let globalCount = 0;
 
-  private async generateActivitiesForUserInRange(
-    userId: string,
-    startDate: Date,
-    endDate: Date,
-  ) {
-    const activities = [];
-    const assignments = [];
-    let currentDate = new Date(startDate);
+      for (const [branchOfficeId, userIds] of Object.entries(this.employees)) {
+        let branchTotal = 0;
+        let branchCount = 0;
 
-    while (currentDate <= endDate) {
-      const dayOfWeek = currentDate.getDay(); // 0 = Domingo, 6 = Sábado
-      if (dayOfWeek >= 1 && dayOfWeek <= 6) {
-        // Solo lunes a viernes
-        const dailyResult = await this.generateDailyActivitiesAndAssignments(
-          userId,
-          new Date(currentDate),
-        );
-        activities.push(...dailyResult.activities);
-        assignments.push(...dailyResult.assignments);
+        for (const userId of userIds) {
+          const randomValue = this.generateRandomValue(
+            calculation.range.min,
+            calculation.range.max,
+          );
+
+          // Subcolección employees
+          const employeeData = {
+            daily: [
+              {
+                periodStart: '2024-11-26',
+                total: randomValue,
+                count: 1,
+                average: randomValue,
+              },
+            ],
+            weekly: [
+              {
+                periodStart: '2024-W48',
+                total: randomValue,
+                count: 1,
+                average: randomValue,
+              },
+            ],
+            monthly: [
+              {
+                periodStart: '2024-11',
+                total: randomValue,
+                count: 1,
+                average: randomValue,
+              },
+            ],
+            trimesterly: [
+              {
+                periodStart: '2024-Q4',
+                total: randomValue,
+                count: 1,
+                average: randomValue,
+              },
+            ],
+            semesterly: [
+              {
+                periodStart: '2024-S2',
+                total: randomValue,
+                count: 1,
+                average: randomValue,
+              },
+            ],
+            yearly: [
+              {
+                periodStart: '2024',
+                total: randomValue,
+                count: 1,
+                average: randomValue,
+              },
+            ],
+          };
+
+          branchTotal += randomValue;
+          branchCount++;
+
+          // Agregar a global
+          globalTotal += randomValue;
+          globalCount++;
+
+          await calcRef.collection('employees').doc(userId).set(employeeData);
+        }
+
+        // Subcolección branchOffice
+        const branchAverage = branchTotal / branchCount;
+        const branchData = {
+          daily: [
+            {
+              periodStart: '2024-11-26',
+              total: branchTotal,
+              count: branchCount,
+              average: branchAverage,
+            },
+          ],
+          weekly: [
+            {
+              periodStart: '2024-W48',
+              total: branchTotal,
+              count: branchCount,
+              average: branchAverage,
+            },
+          ],
+          monthly: [
+            {
+              periodStart: '2024-11',
+              total: branchTotal,
+              count: branchCount,
+              average: branchAverage,
+            },
+          ],
+          trimesterly: [
+            {
+              periodStart: '2024-Q4',
+              total: branchTotal,
+              count: branchCount,
+              average: branchAverage,
+            },
+          ],
+          semesterly: [
+            {
+              periodStart: '2024-S2',
+              total: branchTotal,
+              count: branchCount,
+              average: branchAverage,
+            },
+          ],
+          yearly: [
+            {
+              periodStart: '2024',
+              total: branchTotal,
+              count: branchCount,
+              average: branchAverage,
+            },
+          ],
+        };
+
+        await calcRef
+          .collection('branchOffice')
+          .doc(branchOfficeId)
+          .set(branchData);
       }
-      currentDate.setDate(currentDate.getDate() + 1); // Avanzar al siguiente día
-    }
 
-    return { activities, assignments };
-  }
+      // Subcolección global
+      const globalAverage = globalTotal / globalCount;
+      const globalData = {
+        daily: [
+          {
+            periodStart: '2024-11-26',
+            total: globalTotal,
+            count: globalCount,
+            average: globalAverage,
+          },
+        ],
+        weekly: [
+          {
+            periodStart: '2024-W48',
+            total: globalTotal,
+            count: globalCount,
+            average: globalAverage,
+          },
+        ],
+        monthly: [
+          {
+            periodStart: '2024-11',
+            total: globalTotal,
+            count: globalCount,
+            average: globalAverage,
+          },
+        ],
+        trimesterly: [
+          {
+            periodStart: '2024-Q4',
+            total: globalTotal,
+            count: globalCount,
+            average: globalAverage,
+          },
+        ],
+        semesterly: [
+          {
+            periodStart: '2024-S2',
+            total: globalTotal,
+            count: globalCount,
+            average: globalAverage,
+          },
+        ],
+        yearly: [
+          {
+            periodStart: '2024',
+            total: globalTotal,
+            count: globalCount,
+            average: globalAverage,
+          },
+        ],
+      };
 
-  // Generar actividades y asignaciones para un usuario en un día
-  async generateDailyActivitiesAndAssignments(userId: string, date: Date) {
-    const technician = await this.getTechnicianById(userId);
-    if (!technician.branchOffice) {
-      throw new Error(
-        `El técnico con ID ${userId} no tiene definida una sucursal.`,
+      await calcRef.collection('global').doc('summary').set(globalData);
+
+      console.log(
+        `Cálculo ${calculation.name} creado correctamente con datos globales.`,
       );
     }
-    const activityTypes = await this.getCollectionData('activityTypes');
-    if (activityTypes.length === 0) {
-      throw new Error('No se encontraron tipos de actividades.');
-    }
-    const admin = await this.getAdminByBranchOffice(technician.branchOffice);
-    const activities = [];
-    const assignments = [];
-    const startTime = new Date(date);
-    startTime.setHours(8, 0, 0, 0);
-    let currentTime = new Date(startTime);
-    let endTime = new Date(date);
-    endTime.setHours(16, 30, 0, 0);
-
-    // Generar createdAt primero, dentro de hasta 2 días antes
-    const createdAt = this.getRandomCreatedAt(date);
-
-    // Generar assignmentDate, que será el mismo día que startedAt
-    const assignmentDate = new Date(date);
-    assignmentDate.setHours(
-      8 + Math.floor(Math.random() * 2),
-      Math.floor(Math.random() * 60),
-    ); // Entre 8 AM y 9 AM
-
-    // Generar actividades para cubrir la jornada laboral
-    while (currentTime.getHours() < 16 && activities.length < 5) {
-      const randomType = this.getRandomActivityType(activityTypes);
-      const { description, estimatedTime, neededSupplies = [] } = randomType;
-
-      // Establecer el tiempo de actividad
-      let activityDuration = estimatedTime || Math.floor(Math.random() * 480);
-
-      // Asegurarse de que no sobrepase el horario laboral
-      let activityEndTime = new Date(
-        currentTime.getTime() + activityDuration * 60000,
-      );
-      if (activityEndTime > endTime) {
-        activityEndTime = endTime;
-        activityDuration = (endTime.getTime() - currentTime.getTime()) / 60000;
-      }
-
-      const activity = {
-        activityNumber: this.activityNumberCounter++,
-        activityType: randomType.id,
-        address: `Calle ${Math.floor(Math.random() * 1000)} Trujillo`,
-        branchOffice: technician.branchOffice,
-        comment: 'Actividad completada satisfactoriamente',
-        createdAt: createdAt,
-        description,
-        duration: activityDuration,
-        estimatedTime,
-        evidence: this.generateEvidence(),
-        neededSupply: this.mapNeededSupplies(neededSupplies),
-        orderNumber: `C000${this.activityNumberCounter}`, // Asegurar número único
-        serviceLocation: this.generateServiceLocation(),
-        startedAt: new Date(currentTime),
-        completedAt: new Date(activityEndTime),
-        status: 'completed',
-      };
-      activities.push(activity);
-
-      const assignment = {
-        activityType: activity.activityType,
-        address: activity.address,
-        assignFrom: admin.id,
-        assignTo: technician.id,
-        assignmentDate: assignmentDate,
-        assignmentNumber: this.assignmentNumberCounter++,
-        branchOffice: activity.branchOffice,
-        comment: activity.comment,
-        completedAt: new Date(activityEndTime),
-        createdAt: activity.createdAt,
-        description: activity.description,
-        duration: activity.duration,
-        estimatedTime: activity.estimatedTime,
-        evidence: activity.evidence,
-        neededSupply: activity.neededSupply,
-        orderNumber: activity.orderNumber,
-        serviceLocation: activity.serviceLocation,
-        startedAt: new Date(currentTime),
-        status: activity.status,
-      };
-      assignments.push(assignment);
-
-      // Pausa aleatoria de 3 a 10 minutos entre actividades
-      const pauseDuration = Math.floor(Math.random() * 8) + 3;
-      currentTime = new Date(activityEndTime.getTime() + pauseDuration * 60000);
-
-      // Si la próxima actividad se pasa del final del día, rompemos el bucle
-      if (currentTime >= endTime) {
-        break;
-      }
-    }
-
-    await Promise.all(
-      activities.map((activity) =>
-        this.firestore.collection('activities').add(activity),
-      ),
-    );
-    await Promise.all(
-      assignments.map((assignment) =>
-        this.firestore.collection('assignments').add(assignment),
-      ),
-    );
-
-    return {
-      message: 'Actividades y asignaciones generadas exitosamente',
-      activities,
-      assignments,
-    };
-  }
-
-  // Método para obtener una fecha de creación aleatoria dentro del horario laboral, 1-2 días antes
-  private getRandomCreatedAt(date: Date) {
-    const randomDays = Math.floor(Math.random() * 2) + 1; // Entre 1 y 2 días antes
-    const createdAt = new Date(date);
-    createdAt.setDate(createdAt.getDate() - randomDays);
-    createdAt.setHours(
-      8 + Math.floor(Math.random() * 3),
-      Math.floor(Math.random() * 60),
-    ); // Entre 8 AM y 10 AM
-    return createdAt;
-  }
-
-  // Método para obtener una fecha de asignación aleatoria dentro del mismo día que startedAt
-  private getRandomAssignmentDate(date: Date) {
-    const assignmentDate = new Date(date);
-    assignmentDate.setHours(
-      8 + Math.floor(Math.random() * 2),
-      Math.floor(Math.random() * 60),
-    ); // Entre 8 AM y 9 AM
-    return assignmentDate;
-  }
-
-  // Método para obtener una fecha de inicio aleatoria dentro del horario laboral
-  private getRandomStartedAt(date: Date) {
-    const startedAt = new Date(date);
-    startedAt.setHours(
-      8 + Math.floor(Math.random() * 9),
-      Math.floor(Math.random() * 60),
-    ); // Entre 8 AM y 4 PM
-    return startedAt;
-  }
-
-  // Obtener un tipo de actividad aleatorio
-  private getRandomActivityType(activityTypes: any[]) {
-    const randomIndex = Math.floor(Math.random() * activityTypes.length);
-    return activityTypes[randomIndex];
-  }
-
-  // Generar evidencia de la actividad
-  private generateEvidence() {
-    return Array.from({ length: 4 }, (_, index) => ({
-      evidence: `evidence${index + 1}`,
-      url: `https://example.com/evidence${index + 1}.jpg`,
-    }));
-  }
-
-  // Mapear supplies necesarios
-  private mapNeededSupplies(neededSupplies: any[]) {
-    return neededSupplies.map((supply) => {
-      let quantity = Math.floor(Math.random() * (supply.estimatedUse + 1)); // Aleatorio entre 0 y estimatedUse
-      if (supply.supply === 'supply4' || supply.supply === 'supply9') {
-        quantity = Math.min(quantity, supply.estimatedUse + 100); // Hasta +100 si es cable
-      }
-      return {
-        ...supply,
-        quantity:
-          quantity >= supply.estimatedUse ? quantity : supply.estimatedUse, // quantity debe ser igual a estimatedUse o +1
-      };
-    });
-  }
-
-  // Generar ubicación del servicio
-  private generateServiceLocation() {
-    return [Math.random() * -10, Math.random() * -80]; // Coordenadas aleatorias
-  }
-
-  // Obtener duración aleatoria en un rango
-  private getRandomDuration(baseTime: number) {
-    const minDuration = Math.max(0, baseTime - 10); // Margen de 10 minutos menos
-    const maxDuration = baseTime + 20; // Margen de 20 minutos más
-    return (
-      Math.floor(Math.random() * (maxDuration - minDuration + 1)) + minDuration
-    );
   }
 }

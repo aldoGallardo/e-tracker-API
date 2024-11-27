@@ -1,32 +1,32 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { TestsService } from './tests.service';
+import { HttpCode, HttpStatus } from '@nestjs/common';
 
 @Controller('tests')
 export class TestsController {
   constructor(private readonly testsService: TestsService) {}
 
-  @Post('generate-daily-activities')
-  async generateDailyActivities(
-    @Query('userId') userId: string,
-    @Query('date') date: string,
-  ) {
-    const parsedDate = new Date(date);
-    const result =
-      await this.testsService.generateDailyActivitiesAndAssignments(
-        userId,
-        parsedDate,
-      );
-    return result;
+  @Post('dimensions')
+  @HttpCode(HttpStatus.OK)
+  async seedDimensions(): Promise<string> {
+    try {
+      await this.testsService.seedDimensions();
+      return 'Dimensiones cargadas correctamente.';
+    } catch (error) {
+      console.error('Error al cargar dimensiones:', error);
+      return 'Error al cargar dimensiones.';
+    }
   }
 
-  @Post('generate-multiple-users-activities')
-  async generateMultipleUsersActivities() {
-    const startDate = new Date('2024-10-20');
-    const endDate = new Date('2024-10-31');
-
-    return await this.testsService.generateActivitiesForMultipleUsers(
-      startDate,
-      endDate,
-    );
+  @Post('calculations')
+  @HttpCode(HttpStatus.OK)
+  async seedCalculations(): Promise<string> {
+    try {
+      await this.testsService.seedCalculations();
+      return 'Cálculos cargados correctamente.';
+    } catch (error) {
+      console.error('Error al cargar cálculos:', error);
+      return 'Error al cargar cálculos.';
+    }
   }
 }
