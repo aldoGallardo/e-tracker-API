@@ -12,7 +12,76 @@ export class KpiLibraryService {
     this.firestore = this.firebaseAdmin.firestore();
   }
 
-  //Dimensión: Eficiencia en el Uso de Recursos
+  // Función estática para inicializar el mapa de métodos
+  private static getCalculationMethods(): {
+    [key: string]: (filters: any) => Promise<any>;
+  } {
+    return {
+      calculateAverageSupplyCostPerAssignment: (filters: any) =>
+        new KpiLibraryService({}).calculateAverageSupplyCostPerAssignment(
+          filters,
+        ),
+      calculateResourcesUsage: (filters: any) =>
+        new KpiLibraryService({}).calculateResourcesUsage(filters),
+      calculateResourceUsageCompliance: (filters: any) =>
+        new KpiLibraryService({}).calculateResourceUsageCompliance(
+          null,
+          filters,
+        ),
+      calculateSupplyWastePercentageByItem: (filters: any) =>
+        new KpiLibraryService({}).calculateSupplyWastePercentageByItem(filters),
+      calculateTasksWithoutOverconsumption: (filters: any) =>
+        new KpiLibraryService({}).calculateTasksWithoutOverconsumption(
+          null,
+          filters,
+        ),
+      calculateSupplyConsumptionByTaskType: (filters: any) =>
+        new KpiLibraryService({}).calculateSupplyConsumptionByTaskType(
+          null,
+          filters,
+        ),
+      calculateActiveTime: (filters: any) =>
+        new KpiLibraryService({}).calculateActiveTime(filters),
+      calculateIdleTime: (filters: any) =>
+        new KpiLibraryService({}).calculateIdleTime(filters),
+      calculateActiveUsers: (filters: any) =>
+        new KpiLibraryService({}).calculateActiveUsers(filters),
+      calculateOnTimeStartPercentage: (filters: any) =>
+        new KpiLibraryService({}).calculateOnTimeStartPercentage(null, filters),
+      calculateAverageStartDelay: (filters: any) =>
+        new KpiLibraryService({}).calculateAverageStartDelay(null, filters),
+      calculateAverageDailyTravelTime: (filters: any) =>
+        new KpiLibraryService({}).calculateAverageDailyTravelTime(
+          null,
+          filters,
+        ),
+      calculateAverageCompletionTimeDeviation: (filters: any) =>
+        new KpiLibraryService({}).calculateAverageCompletionTimeDeviation(
+          null,
+          filters,
+        ),
+      calculateAverageExecutionTime: (filters: any) =>
+        new KpiLibraryService({}).calculateAverageExecutionTime(filters),
+      calculateOnTimeCompletionPercentage: (filters: any) =>
+        new KpiLibraryService({}).calculateOnTimeCompletionPercentage(filters),
+      calculateOnTimeDepartureCompliance: (filters: any) =>
+        new KpiLibraryService({}).calculateOnTimeDepartureCompliance(filters),
+      calculateOnTimeEntryCompliance: (filters: any) =>
+        new KpiLibraryService({}).calculateOnTimeEntryCompliance(filters),
+      calculateFullDayCompliance: (filters: any) =>
+        new KpiLibraryService({}).calculateFullDayCompliance(filters),
+    };
+  }
+
+  // Obtener el método de cálculo correspondiente
+  getCalculationMethod(
+    calculationId: string,
+  ): ((filters: any) => Promise<any>) | null {
+    const calculationMethods = KpiLibraryService.getCalculationMethods();
+    return calculationMethods[calculationId] || null;
+  }
+
+  //Dimensión 1: Gestión Eficiente de Recursos
   // Cálculo 1: Costo de recursos por tarea usando assignments
   async calculateAverageSupplyCostPerAssignment(
     filters: {
@@ -198,7 +267,680 @@ export class KpiLibraryService {
     }
   }
 
-  //Dimensión: Puntualidad en la Ejecución de Tareas
+  //Cálculo 6: Porcentaje de tareas con uso adecuado de recursos
+  async calculateResourceUsageCompliance(
+    activities: any[] | null,
+    filters: {
+      id?: string;
+      branchOffice?: string;
+      startDate?: Date;
+      endDate?: Date;
+      activityTypeId?: string;
+    } = {},
+  ): Promise<number> {
+    try {
+      let filteredActivities = activities;
+
+      // Cargar actividad específica si solo se proporciona un ID
+      if (!filteredActivities && filters.id) {
+        const activityDoc = await this.firestore
+          .collection('activities')
+          .doc(filters.id)
+          .get();
+        if (activityDoc.exists) {
+          filteredActivities = [activityDoc.data()];
+        } else {
+          console.log('No activity found with the specified ID');
+          return 0;
+        }
+      }
+
+      // Cargar todas las actividades si no se proporciona ninguna
+      if (!filteredActivities) {
+        const snapshot = await this.firestore.collection('activities').get();
+        if (snapshot.empty) {
+          console.log('No activities found in Firestore.');
+          return 0;
+        }
+        filteredActivities = snapshot.docs.map((doc) => doc.data());
+      }
+
+      // Aplicar filtros adicionales
+      filteredActivities = filteredActivities.filter((activity) => {
+        const activityDate = new Date(activity.completedAt._seconds * 1000);
+        return (
+          (!filters.activityTypeId ||
+            activity.activityType === filters.activityTypeId) &&
+          (!filters.branchOffice ||
+            activity.branchOffice === filters.branchOffice) &&
+          (!filters.startDate || activityDate >= filters.startDate) &&
+          (!filters.endDate || activityDate <= filters.endDate)
+        );
+      });
+
+      if (filteredActivities.length === 0) {
+        console.log('No activities match the specified filters');
+        return 0;
+      }
+
+      let compliantTasks = 0;
+      const totalTasks = filteredActivities.length;
+
+      // Evaluar cada actividad para determinar el uso adecuado de recursos
+      for (const activity of filteredActivities) {
+        let isCompliant = true;
+
+        if (activity.neededSupply && activity.neededSupply.length > 0) {
+          for (const supply of activity.neededSupply) {
+            if (supply.quantity > supply.estimatedUse) {
+              // Comparar directamente sin `parseFloat`
+              isCompliant = false;
+              break;
+            }
+          }
+        }
+
+        if (isCompliant) {
+          compliantTasks += 1;
+        }
+      }
+
+      const compliancePercentage = (compliantTasks / totalTasks) * 100;
+      console.log(
+        'Calculated resource usage compliance percentage:',
+        compliancePercentage,
+      );
+      return parseFloat(compliancePercentage.toFixed(2));
+    } catch (error) {
+      console.error('Error in calculateResourceUsageCompliance:', error);
+      throw new Error(
+        'Failed to calculate resource usage compliance percentage',
+      );
+    }
+  }
+
+  //Cálculo 10: Porcentaje de desperdicio de suministros en cada tarea
+  async calculateSupplyWastePercentageByItem(
+    filters: {
+      id?: string;
+      branchOffice?: string;
+      startDate?: Date;
+      endDate?: Date;
+      activityTypeId?: string;
+    } = {},
+  ): Promise<{ [supply: string]: number }> {
+    try {
+      let filteredActivities = [];
+
+      // Cargar actividad específica si solo se proporciona un ID
+      if (filters.id) {
+        const activityDoc = await this.firestore
+          .collection('activities')
+          .doc(filters.id)
+          .get();
+        if (activityDoc.exists) {
+          const activityData = activityDoc.data();
+          if (activityData?.status === 'completed') {
+            filteredActivities = [activityData];
+          }
+        } else {
+          console.log('No activity found with the specified ID');
+          return {};
+        }
+      } else {
+        // Construir la consulta para traer solo actividades completadas
+        let query = this.firestore
+          .collection('activities')
+          .where('status', '==', 'completed');
+
+        if (filters.branchOffice) {
+          query = query.where('branchOffice', '==', filters.branchOffice);
+        }
+        if (filters.activityTypeId) {
+          query = query.where('activityType', '==', filters.activityTypeId);
+        }
+        if (filters.startDate) {
+          query = query.where('completedAt', '>=', filters.startDate);
+        }
+        if (filters.endDate) {
+          query = query.where('completedAt', '<=', filters.endDate);
+        }
+
+        const snapshot = await query.get();
+        if (snapshot.empty) {
+          console.log('No activities match the specified filters');
+          return {};
+        }
+
+        filteredActivities = snapshot.docs.map((doc) => doc.data());
+      }
+
+      // Mapa para almacenar el porcentaje de desperdicio por suministro
+      const wastePercentageBySupply: {
+        [supply: string]: { waste: number; count: number };
+      } = {};
+
+      // Calcular el porcentaje de desperdicio por suministro
+      for (const activity of filteredActivities) {
+        if (activity.neededSupply && activity.neededSupply.length > 0) {
+          for (const supply of activity.neededSupply) {
+            const estimatedUse = parseFloat(supply.estimatedUse || '0');
+            const quantityUsed = parseFloat(supply.quantity || '0');
+
+            if (estimatedUse > 0) {
+              const wastePercentage =
+                quantityUsed > estimatedUse
+                  ? ((quantityUsed - estimatedUse) / estimatedUse) * 100
+                  : 0;
+
+              if (!wastePercentageBySupply[supply.supply]) {
+                wastePercentageBySupply[supply.supply] = { waste: 0, count: 0 };
+              }
+
+              wastePercentageBySupply[supply.supply].waste += wastePercentage;
+              wastePercentageBySupply[supply.supply].count += 1;
+            }
+          }
+        }
+      }
+
+      // Calcular el promedio de desperdicio por cada suministro
+      const averageWastePercentageBySupply: { [supply: string]: number } = {};
+      for (const [supply, data] of Object.entries(wastePercentageBySupply)) {
+        averageWastePercentageBySupply[supply] =
+          data.count > 0 ? data.waste / data.count : 0;
+      }
+
+      console.log(
+        'Calculated supply waste percentage by item:',
+        averageWastePercentageBySupply,
+      );
+
+      return averageWastePercentageBySupply;
+    } catch (error) {
+      console.error('Error in calculateSupplyWastePercentageByItem:', error);
+      throw new Error('Failed to calculate supply waste percentage by item');
+    }
+  }
+
+  //Cálculo 11: Número de tareas completadas sin sobreconsumo de suministros
+  async calculateTasksWithoutOverconsumption(
+    activities: any[] | null,
+    filters: {
+      id?: string;
+      branchOffice?: string;
+      startDate?: Date;
+      endDate?: Date;
+      activityTypeId?: string;
+    } = {},
+  ): Promise<number> {
+    try {
+      let filteredActivities = activities;
+
+      // Cargar actividad específica si se proporciona un ID
+      if (!filteredActivities && filters.id) {
+        const activityDoc = await this.firestore
+          .collection('activities')
+          .doc(filters.id)
+          .get();
+        if (activityDoc.exists) {
+          filteredActivities = [activityDoc.data()];
+        } else {
+          console.log('No activity found with the specified ID');
+          return 0;
+        }
+      }
+
+      // Cargar todas las actividades si no se proporciona ninguna
+      if (!filteredActivities) {
+        let query = this.firestore
+          .collection('activities')
+          .where('status', '==', 'completed');
+
+        if (filters.branchOffice) {
+          query = query.where('branchOffice', '==', filters.branchOffice);
+        }
+        if (filters.activityTypeId) {
+          query = query.where('activityType', '==', filters.activityTypeId);
+        }
+        if (filters.startDate) {
+          query = query.where('completedAt', '>=', filters.startDate);
+        }
+        if (filters.endDate) {
+          query = query.where('completedAt', '<=', filters.endDate);
+        }
+
+        const snapshot = await query.get();
+        if (snapshot.empty) {
+          console.log(
+            'No activities match the specified filters in Firestore.',
+          );
+          return 0;
+        }
+        filteredActivities = snapshot.docs.map((doc) => doc.data());
+      }
+
+      // Validar que filteredActivities esté inicializado correctamente
+      if (!Array.isArray(filteredActivities)) {
+        console.log('filteredActivities is not an array');
+        return 0;
+      }
+
+      let tasksWithoutOverconsumption = 0;
+
+      for (const activity of filteredActivities) {
+        let isWithinEstimate = true;
+
+        if (activity.neededSupply && activity.neededSupply.length > 0) {
+          for (const supply of activity.neededSupply) {
+            if (parseFloat(supply.quantity) > parseFloat(supply.estimatedUse)) {
+              isWithinEstimate = false;
+              break;
+            }
+          }
+        }
+
+        if (isWithinEstimate) {
+          tasksWithoutOverconsumption += 1;
+        }
+      }
+
+      return tasksWithoutOverconsumption;
+    } catch (error) {
+      console.error('Error in calculateTasksWithoutOverconsumption:', error);
+      throw new Error('Failed to calculate tasks without overconsumption');
+    }
+  }
+
+  //Cálculo 13: Cantidad de suministros consumidos por tipo de tarea
+  async calculateSupplyConsumptionByTaskType(
+    activities: any[] | null,
+    filters: {
+      id?: string;
+      branchOffice?: string;
+      startDate?: Date;
+      endDate?: Date;
+      activityTypeId?: string;
+    } = {},
+  ): Promise<{ [taskType: string]: { [supply: string]: number } }> {
+    try {
+      let filteredActivities = activities;
+
+      // Cargar actividad específica si se proporciona un ID
+      if (!filteredActivities && filters.id) {
+        const activityDoc = await this.firestore
+          .collection('activities')
+          .doc(filters.id)
+          .get();
+        if (activityDoc.exists) {
+          filteredActivities = [activityDoc.data()];
+        } else {
+          console.log('No activity found with the specified ID');
+          return {};
+        }
+      }
+
+      // Cargar todas las actividades si no se proporciona ninguna
+      if (!filteredActivities) {
+        let query = this.firestore
+          .collection('activities')
+          .where('status', '==', 'completed');
+
+        if (filters.branchOffice) {
+          query = query.where('branchOffice', '==', filters.branchOffice);
+        }
+        if (filters.activityTypeId) {
+          query = query.where('activityType', '==', filters.activityTypeId);
+        }
+        if (filters.startDate) {
+          query = query.where('completedAt', '>=', filters.startDate);
+        }
+        if (filters.endDate) {
+          query = query.where('completedAt', '<=', filters.endDate);
+        }
+
+        const snapshot = await query.get();
+        if (snapshot.empty) {
+          console.log(
+            'No activities match the specified filters in Firestore.',
+          );
+          return {};
+        }
+        filteredActivities = snapshot.docs.map((doc) => doc.data());
+      }
+
+      if (!Array.isArray(filteredActivities)) {
+        console.log('filteredActivities is not an array');
+        return {};
+      }
+
+      const supplyConsumptionByTaskType: {
+        [taskType: string]: { [supply: string]: number };
+      } = {};
+
+      for (const activity of filteredActivities) {
+        const taskType = activity.activityType;
+
+        if (!supplyConsumptionByTaskType[taskType]) {
+          supplyConsumptionByTaskType[taskType] = {};
+        }
+
+        if (activity.neededSupply && activity.neededSupply.length > 0) {
+          for (const supply of activity.neededSupply) {
+            const supplyName = supply.supply;
+            const quantityUsed = parseFloat(supply.quantity) || 0;
+
+            if (!supplyConsumptionByTaskType[taskType][supplyName]) {
+              supplyConsumptionByTaskType[taskType][supplyName] = 0;
+            }
+
+            supplyConsumptionByTaskType[taskType][supplyName] += quantityUsed;
+          }
+        }
+      }
+
+      return supplyConsumptionByTaskType;
+    } catch (error) {
+      console.error('Error in calculateSupplyConsumptionByTaskType:', error);
+      throw new Error('Failed to calculate supply consumption by task type');
+    }
+  }
+
+  //Dimensión 2: Proactividad Operativa
+
+  //Cálculo 14: Tiempo de actividad de empleados
+  async calculateActiveTime(filters: {
+    userId?: string;
+    branchOffice?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<number> {
+    try {
+      const startDateTimestamp = filters.startDate
+        ? Timestamp.fromDate(new Date(filters.startDate))
+        : null;
+      const endDateTimestamp = filters.endDate
+        ? Timestamp.fromDate(new Date(filters.endDate))
+        : null;
+
+      let usersSnapshot;
+
+      if (filters.userId) {
+        const userDoc = await this.firestore
+          .collection('users')
+          .doc(filters.userId)
+          .get();
+        if (!userDoc.exists) return 0;
+        usersSnapshot = [userDoc];
+      } else {
+        let query = this.firestore.collection(
+          'users',
+        ) as FirebaseFirestore.Query;
+        if (filters.branchOffice) {
+          query = query.where('branchOffice', '==', filters.branchOffice);
+        }
+        const snapshot = await query.get();
+        if (snapshot.empty) return 0;
+        usersSnapshot = snapshot.docs;
+      }
+
+      let totalActiveTime = 0; // Total en minutos
+
+      for (const doc of usersSnapshot) {
+        const user = doc.data();
+        console.log('Processing User:', doc.id);
+        console.log('User Data:', user);
+
+        const assignmentsSnapshot = await this.firestore
+          .collection('assignments')
+          .where('assignTo', '==', doc.id)
+          .where('status', '==', 'completed')
+          .where('startedAt', '>=', startDateTimestamp)
+          .where('startedAt', '<=', endDateTimestamp)
+          .get();
+
+        if (assignmentsSnapshot.empty) {
+          console.log(`No assignments found for User ID: ${doc.id}`);
+          continue;
+        }
+
+        const totalUserActivityTime = assignmentsSnapshot.docs.reduce(
+          (sum, assignmentDoc) => {
+            const assignmentData = assignmentDoc.data();
+            const duration = assignmentData.duration || 0; // Duración en minutos
+            console.log(
+              `Assignment ID: ${assignmentDoc.id}, Duration: ${duration} minutes`,
+            );
+            return sum + duration;
+          },
+          0,
+        );
+
+        console.log(
+          `Total Activity Time for User ${doc.id}: ${totalUserActivityTime} minutes`,
+        );
+        totalActiveTime += totalUserActivityTime;
+      }
+
+      console.log(
+        'Total Active Time (Tiempo Total de Actividad en minutos):',
+        totalActiveTime,
+      );
+
+      return totalActiveTime;
+    } catch (error) {
+      console.error('Error in calculateActiveTime:', error);
+      throw new Error('Failed to calculate active time');
+    }
+  }
+
+  // Cálculo 15: Tiempo de inactividad de empleados
+  async calculateIdleTime(filters: {
+    userId?: string;
+    branchOffice?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<number> {
+    try {
+      const startDate = filters.startDate ? new Date(filters.startDate) : null;
+      const endDate = filters.endDate ? new Date(filters.endDate) : null;
+
+      let usersSnapshot;
+
+      if (filters.userId) {
+        const userDoc = await this.firestore
+          .collection('users')
+          .doc(filters.userId)
+          .get();
+        if (!userDoc.exists) return 0;
+        usersSnapshot = [userDoc];
+      } else {
+        let query = this.firestore.collection(
+          'users',
+        ) as FirebaseFirestore.Query;
+        if (filters.branchOffice) {
+          query = query.where('branchOffice', '==', filters.branchOffice);
+        }
+        const snapshot = await query.get();
+        if (snapshot.empty) return 0;
+        usersSnapshot = snapshot.docs;
+      }
+
+      console.log('Fetching all assignments within the date range...');
+      const assignmentsSnapshot = await this.firestore
+        .collection('assignments')
+        .where('status', '==', 'completed')
+        .where('startedAt', '>=', startDate || new Date(0))
+        .where('startedAt', '<=', endDate || new Date())
+        .get();
+
+      console.log(`Total assignments fetched: ${assignmentsSnapshot.size}`);
+
+      const assignmentsByUserAndDate: Record<
+        string,
+        Record<string, number>
+      > = {};
+
+      assignmentsSnapshot.docs.forEach((doc) => {
+        const assignment = doc.data();
+        const assignTo = assignment.assignTo;
+        const startedAt = assignment.startedAt.toDate();
+        const duration = assignment.duration || 0;
+
+        const dateKey = startedAt.toISOString().split('T')[0];
+
+        if (!assignmentsByUserAndDate[assignTo]) {
+          assignmentsByUserAndDate[assignTo] = {};
+        }
+        if (!assignmentsByUserAndDate[assignTo][dateKey]) {
+          assignmentsByUserAndDate[assignTo][dateKey] = 0;
+        }
+        assignmentsByUserAndDate[assignTo][dateKey] += duration;
+
+        console.log(
+          `Assignment Processed: User ID: ${assignTo}, Date: ${dateKey}, Duration: ${duration}`,
+        );
+      });
+
+      let totalIdleTime = 0;
+
+      for (const doc of usersSnapshot) {
+        const user = doc.data();
+        const { dailyAssistance } = user;
+
+        console.log(`Processing User: ${doc.id}`);
+        console.log(
+          `Daily Assistance Entries: ${dailyAssistance?.length || 0}`,
+        );
+
+        if (!dailyAssistance) continue;
+
+        for (const attendance of dailyAssistance) {
+          const date =
+            attendance.date instanceof Timestamp
+              ? attendance.date.toDate()
+              : new Date(attendance.date);
+
+          if (
+            (!startDate || date >= startDate) &&
+            (!endDate || date <= endDate)
+          ) {
+            const totalMinutes = (attendance.totalHours || 0) * 60;
+
+            const dateKey = date.toISOString().split('T')[0];
+            const userAssignments =
+              assignmentsByUserAndDate[doc.id]?.[dateKey] || 0;
+
+            console.log('---');
+            console.log('Processing Attendance Entry');
+            console.log('User ID:', doc.id);
+            console.log('Attendance Date:', date);
+            console.log('Total Hours (en minutos):', totalMinutes);
+            console.log('Total Activity Time (en minutos):', userAssignments);
+
+            const idleTime = totalMinutes - userAssignments;
+            if (idleTime > 0) {
+              totalIdleTime += idleTime;
+              console.log(
+                'Idle Time (Tiempo de Inactividad en minutos):',
+                idleTime,
+              );
+            } else {
+              console.log('Idle Time is negative or zero. Skipping...');
+            }
+            console.log('---');
+          }
+        }
+      }
+
+      console.log(
+        'Total Idle Time (Tiempo de Inactividad Total en minutos):',
+        totalIdleTime,
+      );
+
+      return totalIdleTime;
+    } catch (error) {
+      console.error('Error in calculateIdleTime:', error);
+      throw new Error('Failed to calculate idle time');
+    }
+  }
+
+  //Cálculo 16: Cantidad de empleados activos
+  async calculateActiveUsers(filters: {
+    userId?: string;
+    branchOffice?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<number> {
+    try {
+      const startDateTimestamp = filters.startDate
+        ? Timestamp.fromDate(new Date(filters.startDate))
+        : null;
+      const endDateTimestamp = filters.endDate
+        ? Timestamp.fromDate(new Date(filters.endDate))
+        : null;
+
+      let usersSnapshot;
+
+      if (filters.userId) {
+        const userDoc = await this.firestore
+          .collection('users')
+          .doc(filters.userId)
+          .get();
+        if (!userDoc.exists) return 0;
+        usersSnapshot = [userDoc];
+      } else {
+        let query = this.firestore.collection(
+          'users',
+        ) as FirebaseFirestore.Query;
+        if (filters.branchOffice) {
+          query = query.where('branchOffice', '==', filters.branchOffice);
+        }
+        const snapshot = await query.get();
+        if (snapshot.empty) return 0;
+        usersSnapshot = snapshot.docs;
+      }
+
+      let activeUsersCount = 0;
+
+      for (const doc of usersSnapshot) {
+        const user = doc.data();
+        const { dailyAssistance } = user;
+
+        // Verificar si el usuario tiene registros de asistencia en el rango
+        const hasActiveEntries = dailyAssistance.some((attendance) => {
+          const date =
+            attendance.date instanceof Timestamp
+              ? attendance.date.toDate()
+              : new Date(attendance.date);
+
+          return (
+            (!filters.startDate || date >= filters.startDate) &&
+            (!filters.endDate || date <= filters.endDate)
+          );
+        });
+
+        if (hasActiveEntries) {
+          activeUsersCount++;
+          console.log(`User ID ${doc.id} is active within the filters.`);
+        } else {
+          console.log(`User ID ${doc.id} is NOT active within the filters.`);
+        }
+      }
+
+      console.log('Total Active Users:', activeUsersCount);
+      return activeUsersCount;
+    } catch (error) {
+      console.error('Error in calculateActiveUsers:', error);
+      throw new Error('Failed to calculate active users');
+    }
+  }
+
+  //Cálculo sugerido 1: Tasa de desperdicio acumulado.
+
+  //Cálculo sugerido 2: Recursos más desperdiciados.
+
+  //Dimensión 3: Cumplimiento de Tareas
   //Cálculo 3: Porcentaje de tareas iniciadas puntualmente
   async calculateOnTimeStartPercentage(
     activities: any[] | null,
@@ -634,99 +1376,6 @@ export class KpiLibraryService {
     }
   }
 
-  //Dimensión: Eficiencia en la Ejecución de Tareas
-  //Cálculo 6: Porcentaje de tareas con uso adecuado de recursos
-  async calculateResourceUsageCompliance(
-    activities: any[] | null,
-    filters: {
-      id?: string;
-      branchOffice?: string;
-      startDate?: Date;
-      endDate?: Date;
-      activityTypeId?: string;
-    } = {},
-  ): Promise<number> {
-    try {
-      let filteredActivities = activities;
-
-      // Cargar actividad específica si solo se proporciona un ID
-      if (!filteredActivities && filters.id) {
-        const activityDoc = await this.firestore
-          .collection('activities')
-          .doc(filters.id)
-          .get();
-        if (activityDoc.exists) {
-          filteredActivities = [activityDoc.data()];
-        } else {
-          console.log('No activity found with the specified ID');
-          return 0;
-        }
-      }
-
-      // Cargar todas las actividades si no se proporciona ninguna
-      if (!filteredActivities) {
-        const snapshot = await this.firestore.collection('activities').get();
-        if (snapshot.empty) {
-          console.log('No activities found in Firestore.');
-          return 0;
-        }
-        filteredActivities = snapshot.docs.map((doc) => doc.data());
-      }
-
-      // Aplicar filtros adicionales
-      filteredActivities = filteredActivities.filter((activity) => {
-        const activityDate = new Date(activity.completedAt._seconds * 1000);
-        return (
-          (!filters.activityTypeId ||
-            activity.activityType === filters.activityTypeId) &&
-          (!filters.branchOffice ||
-            activity.branchOffice === filters.branchOffice) &&
-          (!filters.startDate || activityDate >= filters.startDate) &&
-          (!filters.endDate || activityDate <= filters.endDate)
-        );
-      });
-
-      if (filteredActivities.length === 0) {
-        console.log('No activities match the specified filters');
-        return 0;
-      }
-
-      let compliantTasks = 0;
-      const totalTasks = filteredActivities.length;
-
-      // Evaluar cada actividad para determinar el uso adecuado de recursos
-      for (const activity of filteredActivities) {
-        let isCompliant = true;
-
-        if (activity.neededSupply && activity.neededSupply.length > 0) {
-          for (const supply of activity.neededSupply) {
-            if (supply.quantity > supply.estimatedUse) {
-              // Comparar directamente sin `parseFloat`
-              isCompliant = false;
-              break;
-            }
-          }
-        }
-
-        if (isCompliant) {
-          compliantTasks += 1;
-        }
-      }
-
-      const compliancePercentage = (compliantTasks / totalTasks) * 100;
-      console.log(
-        'Calculated resource usage compliance percentage:',
-        compliancePercentage,
-      );
-      return parseFloat(compliancePercentage.toFixed(2));
-    } catch (error) {
-      console.error('Error in calculateResourceUsageCompliance:', error);
-      throw new Error(
-        'Failed to calculate resource usage compliance percentage',
-      );
-    }
-  }
-
   //Cálculo 7: Tiempo promedio de finalización en comparación con el estimado
   async calculateAverageCompletionTimeDeviation(
     activities: any[] | null,
@@ -985,589 +1634,8 @@ export class KpiLibraryService {
       throw new Error('Failed to calculate on-time completion percentage');
     }
   }
+  //Dimensión 4: Cumplimiento Laboral
 
-  //Dimensión: Optimización en el Uso de Suministros
-  //Cálculo 10: Porcentaje de desperdicio de suministros en cada tarea
-  async calculateSupplyWastePercentageByItem(
-    filters: {
-      id?: string;
-      branchOffice?: string;
-      startDate?: Date;
-      endDate?: Date;
-      activityTypeId?: string;
-    } = {},
-  ): Promise<{ [supply: string]: number }> {
-    try {
-      let filteredActivities = [];
-
-      // Cargar actividad específica si solo se proporciona un ID
-      if (filters.id) {
-        const activityDoc = await this.firestore
-          .collection('activities')
-          .doc(filters.id)
-          .get();
-        if (activityDoc.exists) {
-          const activityData = activityDoc.data();
-          if (activityData?.status === 'completed') {
-            filteredActivities = [activityData];
-          }
-        } else {
-          console.log('No activity found with the specified ID');
-          return {};
-        }
-      } else {
-        // Construir la consulta para traer solo actividades completadas
-        let query = this.firestore
-          .collection('activities')
-          .where('status', '==', 'completed');
-
-        if (filters.branchOffice) {
-          query = query.where('branchOffice', '==', filters.branchOffice);
-        }
-        if (filters.activityTypeId) {
-          query = query.where('activityType', '==', filters.activityTypeId);
-        }
-        if (filters.startDate) {
-          query = query.where('completedAt', '>=', filters.startDate);
-        }
-        if (filters.endDate) {
-          query = query.where('completedAt', '<=', filters.endDate);
-        }
-
-        const snapshot = await query.get();
-        if (snapshot.empty) {
-          console.log('No activities match the specified filters');
-          return {};
-        }
-
-        filteredActivities = snapshot.docs.map((doc) => doc.data());
-      }
-
-      // Mapa para almacenar el porcentaje de desperdicio por suministro
-      const wastePercentageBySupply: {
-        [supply: string]: { waste: number; count: number };
-      } = {};
-
-      // Calcular el porcentaje de desperdicio por suministro
-      for (const activity of filteredActivities) {
-        if (activity.neededSupply && activity.neededSupply.length > 0) {
-          for (const supply of activity.neededSupply) {
-            const estimatedUse = parseFloat(supply.estimatedUse || '0');
-            const quantityUsed = parseFloat(supply.quantity || '0');
-
-            if (estimatedUse > 0) {
-              const wastePercentage =
-                quantityUsed > estimatedUse
-                  ? ((quantityUsed - estimatedUse) / estimatedUse) * 100
-                  : 0;
-
-              if (!wastePercentageBySupply[supply.supply]) {
-                wastePercentageBySupply[supply.supply] = { waste: 0, count: 0 };
-              }
-
-              wastePercentageBySupply[supply.supply].waste += wastePercentage;
-              wastePercentageBySupply[supply.supply].count += 1;
-            }
-          }
-        }
-      }
-
-      // Calcular el promedio de desperdicio por cada suministro
-      const averageWastePercentageBySupply: { [supply: string]: number } = {};
-      for (const [supply, data] of Object.entries(wastePercentageBySupply)) {
-        averageWastePercentageBySupply[supply] =
-          data.count > 0 ? data.waste / data.count : 0;
-      }
-
-      console.log(
-        'Calculated supply waste percentage by item:',
-        averageWastePercentageBySupply,
-      );
-
-      return averageWastePercentageBySupply;
-    } catch (error) {
-      console.error('Error in calculateSupplyWastePercentageByItem:', error);
-      throw new Error('Failed to calculate supply waste percentage by item');
-    }
-  }
-
-  //Cálculo 11: Número de tareas completadas sin sobreconsumo de suministros
-  async calculateTasksWithoutOverconsumption(
-    activities: any[] | null,
-    filters: {
-      id?: string;
-      branchOffice?: string;
-      startDate?: Date;
-      endDate?: Date;
-      activityTypeId?: string;
-    } = {},
-  ): Promise<number> {
-    try {
-      let filteredActivities = activities;
-
-      // Cargar actividad específica si se proporciona un ID
-      if (!filteredActivities && filters.id) {
-        const activityDoc = await this.firestore
-          .collection('activities')
-          .doc(filters.id)
-          .get();
-        if (activityDoc.exists) {
-          filteredActivities = [activityDoc.data()];
-        } else {
-          console.log('No activity found with the specified ID');
-          return 0;
-        }
-      }
-
-      // Cargar todas las actividades si no se proporciona ninguna
-      if (!filteredActivities) {
-        let query = this.firestore
-          .collection('activities')
-          .where('status', '==', 'completed');
-
-        if (filters.branchOffice) {
-          query = query.where('branchOffice', '==', filters.branchOffice);
-        }
-        if (filters.activityTypeId) {
-          query = query.where('activityType', '==', filters.activityTypeId);
-        }
-        if (filters.startDate) {
-          query = query.where('completedAt', '>=', filters.startDate);
-        }
-        if (filters.endDate) {
-          query = query.where('completedAt', '<=', filters.endDate);
-        }
-
-        const snapshot = await query.get();
-        if (snapshot.empty) {
-          console.log(
-            'No activities match the specified filters in Firestore.',
-          );
-          return 0;
-        }
-        filteredActivities = snapshot.docs.map((doc) => doc.data());
-      }
-
-      // Validar que filteredActivities esté inicializado correctamente
-      if (!Array.isArray(filteredActivities)) {
-        console.log('filteredActivities is not an array');
-        return 0;
-      }
-
-      let tasksWithoutOverconsumption = 0;
-
-      for (const activity of filteredActivities) {
-        let isWithinEstimate = true;
-
-        if (activity.neededSupply && activity.neededSupply.length > 0) {
-          for (const supply of activity.neededSupply) {
-            if (parseFloat(supply.quantity) > parseFloat(supply.estimatedUse)) {
-              isWithinEstimate = false;
-              break;
-            }
-          }
-        }
-
-        if (isWithinEstimate) {
-          tasksWithoutOverconsumption += 1;
-        }
-      }
-
-      return tasksWithoutOverconsumption;
-    } catch (error) {
-      console.error('Error in calculateTasksWithoutOverconsumption:', error);
-      throw new Error('Failed to calculate tasks without overconsumption');
-    }
-  }
-
-  //Cálculo 12: Calcula el costo medio en suministros de las tareas completadas.
-
-  //Por ahora me lo salto
-
-  //Cálculo 13: Cantidad de suministros consumidos por tipo de tarea
-  async calculateSupplyConsumptionByTaskType(
-    activities: any[] | null,
-    filters: {
-      id?: string;
-      branchOffice?: string;
-      startDate?: Date;
-      endDate?: Date;
-      activityTypeId?: string;
-    } = {},
-  ): Promise<{ [taskType: string]: { [supply: string]: number } }> {
-    try {
-      let filteredActivities = activities;
-
-      // Cargar actividad específica si se proporciona un ID
-      if (!filteredActivities && filters.id) {
-        const activityDoc = await this.firestore
-          .collection('activities')
-          .doc(filters.id)
-          .get();
-        if (activityDoc.exists) {
-          filteredActivities = [activityDoc.data()];
-        } else {
-          console.log('No activity found with the specified ID');
-          return {};
-        }
-      }
-
-      // Cargar todas las actividades si no se proporciona ninguna
-      if (!filteredActivities) {
-        let query = this.firestore
-          .collection('activities')
-          .where('status', '==', 'completed');
-
-        if (filters.branchOffice) {
-          query = query.where('branchOffice', '==', filters.branchOffice);
-        }
-        if (filters.activityTypeId) {
-          query = query.where('activityType', '==', filters.activityTypeId);
-        }
-        if (filters.startDate) {
-          query = query.where('completedAt', '>=', filters.startDate);
-        }
-        if (filters.endDate) {
-          query = query.where('completedAt', '<=', filters.endDate);
-        }
-
-        const snapshot = await query.get();
-        if (snapshot.empty) {
-          console.log(
-            'No activities match the specified filters in Firestore.',
-          );
-          return {};
-        }
-        filteredActivities = snapshot.docs.map((doc) => doc.data());
-      }
-
-      if (!Array.isArray(filteredActivities)) {
-        console.log('filteredActivities is not an array');
-        return {};
-      }
-
-      const supplyConsumptionByTaskType: {
-        [taskType: string]: { [supply: string]: number };
-      } = {};
-
-      for (const activity of filteredActivities) {
-        const taskType = activity.activityType;
-
-        if (!supplyConsumptionByTaskType[taskType]) {
-          supplyConsumptionByTaskType[taskType] = {};
-        }
-
-        if (activity.neededSupply && activity.neededSupply.length > 0) {
-          for (const supply of activity.neededSupply) {
-            const supplyName = supply.supply;
-            const quantityUsed = parseFloat(supply.quantity) || 0;
-
-            if (!supplyConsumptionByTaskType[taskType][supplyName]) {
-              supplyConsumptionByTaskType[taskType][supplyName] = 0;
-            }
-
-            supplyConsumptionByTaskType[taskType][supplyName] += quantityUsed;
-          }
-        }
-      }
-
-      return supplyConsumptionByTaskType;
-    } catch (error) {
-      console.error('Error in calculateSupplyConsumptionByTaskType:', error);
-      throw new Error('Failed to calculate supply consumption by task type');
-    }
-  }
-
-  //Dimensión: Tiempo de Inactividad
-  //Cálculo 14: Tiempo de actividad de empleados
-  async calculateActiveTime(filters: {
-    userId?: string;
-    branchOffice?: string;
-    startDate?: Date;
-    endDate?: Date;
-  }): Promise<number> {
-    try {
-      const startDateTimestamp = filters.startDate
-        ? Timestamp.fromDate(new Date(filters.startDate))
-        : null;
-      const endDateTimestamp = filters.endDate
-        ? Timestamp.fromDate(new Date(filters.endDate))
-        : null;
-
-      let usersSnapshot;
-
-      if (filters.userId) {
-        const userDoc = await this.firestore
-          .collection('users')
-          .doc(filters.userId)
-          .get();
-        if (!userDoc.exists) return 0;
-        usersSnapshot = [userDoc];
-      } else {
-        let query = this.firestore.collection(
-          'users',
-        ) as FirebaseFirestore.Query;
-        if (filters.branchOffice) {
-          query = query.where('branchOffice', '==', filters.branchOffice);
-        }
-        const snapshot = await query.get();
-        if (snapshot.empty) return 0;
-        usersSnapshot = snapshot.docs;
-      }
-
-      let totalActiveTime = 0; // Total en minutos
-
-      for (const doc of usersSnapshot) {
-        const user = doc.data();
-        console.log('Processing User:', doc.id);
-        console.log('User Data:', user);
-
-        const assignmentsSnapshot = await this.firestore
-          .collection('assignments')
-          .where('assignTo', '==', doc.id)
-          .where('status', '==', 'completed')
-          .where('startedAt', '>=', startDateTimestamp)
-          .where('startedAt', '<=', endDateTimestamp)
-          .get();
-
-        if (assignmentsSnapshot.empty) {
-          console.log(`No assignments found for User ID: ${doc.id}`);
-          continue;
-        }
-
-        const totalUserActivityTime = assignmentsSnapshot.docs.reduce(
-          (sum, assignmentDoc) => {
-            const assignmentData = assignmentDoc.data();
-            const duration = assignmentData.duration || 0; // Duración en minutos
-            console.log(
-              `Assignment ID: ${assignmentDoc.id}, Duration: ${duration} minutes`,
-            );
-            return sum + duration;
-          },
-          0,
-        );
-
-        console.log(
-          `Total Activity Time for User ${doc.id}: ${totalUserActivityTime} minutes`,
-        );
-        totalActiveTime += totalUserActivityTime;
-      }
-
-      console.log(
-        'Total Active Time (Tiempo Total de Actividad en minutos):',
-        totalActiveTime,
-      );
-
-      return totalActiveTime;
-    } catch (error) {
-      console.error('Error in calculateActiveTime:', error);
-      throw new Error('Failed to calculate active time');
-    }
-  }
-
-  // Cálculo 15: Tiempo de inactividad de empleados
-  async calculateIdleTime(filters: {
-    userId?: string;
-    branchOffice?: string;
-    startDate?: Date;
-    endDate?: Date;
-  }): Promise<number> {
-    try {
-      const startDate = filters.startDate ? new Date(filters.startDate) : null;
-      const endDate = filters.endDate ? new Date(filters.endDate) : null;
-
-      let usersSnapshot;
-
-      if (filters.userId) {
-        const userDoc = await this.firestore
-          .collection('users')
-          .doc(filters.userId)
-          .get();
-        if (!userDoc.exists) return 0;
-        usersSnapshot = [userDoc];
-      } else {
-        let query = this.firestore.collection(
-          'users',
-        ) as FirebaseFirestore.Query;
-        if (filters.branchOffice) {
-          query = query.where('branchOffice', '==', filters.branchOffice);
-        }
-        const snapshot = await query.get();
-        if (snapshot.empty) return 0;
-        usersSnapshot = snapshot.docs;
-      }
-
-      console.log('Fetching all assignments within the date range...');
-      const assignmentsSnapshot = await this.firestore
-        .collection('assignments')
-        .where('status', '==', 'completed')
-        .where('startedAt', '>=', startDate || new Date(0))
-        .where('startedAt', '<=', endDate || new Date())
-        .get();
-
-      console.log(`Total assignments fetched: ${assignmentsSnapshot.size}`);
-
-      const assignmentsByUserAndDate: Record<
-        string,
-        Record<string, number>
-      > = {};
-
-      assignmentsSnapshot.docs.forEach((doc) => {
-        const assignment = doc.data();
-        const assignTo = assignment.assignTo;
-        const startedAt = assignment.startedAt.toDate();
-        const duration = assignment.duration || 0;
-
-        const dateKey = startedAt.toISOString().split('T')[0];
-
-        if (!assignmentsByUserAndDate[assignTo]) {
-          assignmentsByUserAndDate[assignTo] = {};
-        }
-        if (!assignmentsByUserAndDate[assignTo][dateKey]) {
-          assignmentsByUserAndDate[assignTo][dateKey] = 0;
-        }
-        assignmentsByUserAndDate[assignTo][dateKey] += duration;
-
-        console.log(
-          `Assignment Processed: User ID: ${assignTo}, Date: ${dateKey}, Duration: ${duration}`,
-        );
-      });
-
-      let totalIdleTime = 0;
-
-      for (const doc of usersSnapshot) {
-        const user = doc.data();
-        const { dailyAssistance } = user;
-
-        console.log(`Processing User: ${doc.id}`);
-        console.log(
-          `Daily Assistance Entries: ${dailyAssistance?.length || 0}`,
-        );
-
-        if (!dailyAssistance) continue;
-
-        for (const attendance of dailyAssistance) {
-          const date =
-            attendance.date instanceof Timestamp
-              ? attendance.date.toDate()
-              : new Date(attendance.date);
-
-          if (
-            (!startDate || date >= startDate) &&
-            (!endDate || date <= endDate)
-          ) {
-            const totalMinutes = (attendance.totalHours || 0) * 60;
-
-            const dateKey = date.toISOString().split('T')[0];
-            const userAssignments =
-              assignmentsByUserAndDate[doc.id]?.[dateKey] || 0;
-
-            console.log('---');
-            console.log('Processing Attendance Entry');
-            console.log('User ID:', doc.id);
-            console.log('Attendance Date:', date);
-            console.log('Total Hours (en minutos):', totalMinutes);
-            console.log('Total Activity Time (en minutos):', userAssignments);
-
-            const idleTime = totalMinutes - userAssignments;
-            if (idleTime > 0) {
-              totalIdleTime += idleTime;
-              console.log(
-                'Idle Time (Tiempo de Inactividad en minutos):',
-                idleTime,
-              );
-            } else {
-              console.log('Idle Time is negative or zero. Skipping...');
-            }
-            console.log('---');
-          }
-        }
-      }
-
-      console.log(
-        'Total Idle Time (Tiempo de Inactividad Total en minutos):',
-        totalIdleTime,
-      );
-
-      return totalIdleTime;
-    } catch (error) {
-      console.error('Error in calculateIdleTime:', error);
-      throw new Error('Failed to calculate idle time');
-    }
-  }
-
-  //Cálculo 16: Cantidad de empleados activos
-  async calculateActiveUsers(filters: {
-    userId?: string;
-    branchOffice?: string;
-    startDate?: Date;
-    endDate?: Date;
-  }): Promise<number> {
-    try {
-      const startDateTimestamp = filters.startDate
-        ? Timestamp.fromDate(new Date(filters.startDate))
-        : null;
-      const endDateTimestamp = filters.endDate
-        ? Timestamp.fromDate(new Date(filters.endDate))
-        : null;
-
-      let usersSnapshot;
-
-      if (filters.userId) {
-        const userDoc = await this.firestore
-          .collection('users')
-          .doc(filters.userId)
-          .get();
-        if (!userDoc.exists) return 0;
-        usersSnapshot = [userDoc];
-      } else {
-        let query = this.firestore.collection(
-          'users',
-        ) as FirebaseFirestore.Query;
-        if (filters.branchOffice) {
-          query = query.where('branchOffice', '==', filters.branchOffice);
-        }
-        const snapshot = await query.get();
-        if (snapshot.empty) return 0;
-        usersSnapshot = snapshot.docs;
-      }
-
-      let activeUsersCount = 0;
-
-      for (const doc of usersSnapshot) {
-        const user = doc.data();
-        const { dailyAssistance } = user;
-
-        // Verificar si el usuario tiene registros de asistencia en el rango
-        const hasActiveEntries = dailyAssistance.some((attendance) => {
-          const date =
-            attendance.date instanceof Timestamp
-              ? attendance.date.toDate()
-              : new Date(attendance.date);
-
-          return (
-            (!filters.startDate || date >= filters.startDate) &&
-            (!filters.endDate || date <= filters.endDate)
-          );
-        });
-
-        if (hasActiveEntries) {
-          activeUsersCount++;
-          console.log(`User ID ${doc.id} is active within the filters.`);
-        } else {
-          console.log(`User ID ${doc.id} is NOT active within the filters.`);
-        }
-      }
-
-      console.log('Total Active Users:', activeUsersCount);
-      return activeUsersCount;
-    } catch (error) {
-      console.error('Error in calculateActiveUsers:', error);
-      throw new Error('Failed to calculate active users');
-    }
-  }
-
-  //Dimensión: Puntualidad del Personal
   // Cálculo 17: Porcentaje de técnicos que cumplen con los horarios de salida
   async calculateOnTimeDepartureCompliance(filters: {
     userId?: string;

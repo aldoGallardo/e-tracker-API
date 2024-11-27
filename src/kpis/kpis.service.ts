@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
-import { CreateKpiDto } from './dto/create-kpi.dto';
-import { KpiCalculator } from './kpis-calculation.service';
+import { Injectable } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { Firestore } from '@google-cloud/firestore';
 
@@ -16,87 +10,195 @@ export class KpisService {
     this.firestore = this.firebaseAdmin.firestore();
   }
 
-  // Crear un KPI
-  async createKpi(createKpiDto: CreateKpiDto) {
-    try {
-      // Convierte el objeto `createKpiDto` en un JSON puro
-      const kpiData = { ...createKpiDto };
+  // Método principal para actualizar valores diarios y sus agregados progresivos
+  async updateDailyValue(
+    calculationId: string,
+    employeeId: string,
+    branchOfficeId: string,
+    date: Date,
+    value: number,
+  ): Promise<void> {
+    const dailyKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
 
-      const kpiRef = await this.firestore.collection('kpis').add(kpiData);
-      return { id: kpiRef.id, ...kpiData };
-    } catch (error) {
-      console.error('Error details:', error); // Log detallado para depuración
-      throw new BadRequestException(`Error al crear el KPI: ${error.message}`);
-    }
+    // Nivel empleado
+    await this.updateAggregate(
+      calculationId,
+      `employees/${employeeId}/daily`,
+      dailyKey,
+      value,
+    );
+
+    // Nivel sucursal
+    await this.recalculateAggregate(
+      calculationId,
+      `employees`,
+      `branchOffice/${branchOfficeId}/daily`,
+      dailyKey,
+      (employeeDoc) => employeeDoc.average,
+    );
+
+    // Nivel global
+    await this.recalculateAggregate(
+      calculationId,
+      `branchOffice`,
+      `global/daily`,
+      dailyKey,
+      (branchDoc) => branchDoc.average,
+    );
+
+    // Actualizar los demás niveles (semanal, mensual, etc.) en cascada
+    const weeklyKey = `${date.getFullYear()}-W${this.getWeekNumber(date)}`;
+    const monthlyKey = date.toISOString().slice(0, 7); // YYYY-MM
+    const quarterlyKey = `${date.getFullYear()}-Q${this.getQuarter(date)}`;
+    const semesterlyKey = `${date.getFullYear()}-S${this.getSemester(date)}`;
+    const yearlyKey = `${date.getFullYear()}`;
+
+    await this.recalculatePeriodAggregate(
+      calculationId,
+      'daily',
+      'weekly',
+      weeklyKey,
+    );
+    await this.recalculatePeriodAggregate(
+      calculationId,
+      'weekly',
+      'monthly',
+      monthlyKey,
+    );
+    await this.recalculatePeriodAggregate(
+      calculationId,
+      'monthly',
+      'trimesterly',
+      quarterlyKey,
+    );
+    await this.recalculatePeriodAggregate(
+      calculationId,
+      'trimesterly',
+      'semesterly',
+      semesterlyKey,
+    );
+    await this.recalculatePeriodAggregate(
+      calculationId,
+      'semesterly',
+      'yearly',
+      yearlyKey,
+    );
   }
 
-  // Obtener un KPI por ID
-  async getKpiById(kpiId: string) {
-    const kpiDoc = await this.firestore.collection('kpis').doc(kpiId).get();
-    if (!kpiDoc.exists) {
-      throw new NotFoundException(`KPI con ID ${kpiId} no encontrado`);
-    }
-    return kpiDoc.data();
+  // Actualiza un valor y lo agrega al periodo correspondiente
+  private async updateAggregate(
+    calculationId: string,
+    collectionName: string,
+    periodKey: string,
+    value: number,
+  ): Promise<void> {
+    const ref = this.firestore
+      .collection('calculations')
+      .doc(calculationId)
+      .collection(collectionName)
+      .doc(periodKey);
+
+    await this.firestore.runTransaction(async (transaction) => {
+      const doc = await transaction.get(ref);
+
+      if (!doc.exists) {
+        transaction.set(ref, {
+          periodStart: periodKey,
+          total: value,
+          count: 1,
+          average: value,
+        });
+      } else {
+        const data = doc.data();
+        const currentTotal = data?.total || 0;
+        const currentCount = data?.count || 0;
+
+        const newTotal = currentTotal + value;
+        const newCount = currentCount + 1;
+        const newAverage = newTotal / newCount;
+
+        transaction.update(ref, {
+          total: newTotal,
+          count: newCount,
+          average: newAverage,
+        });
+      }
+    });
   }
 
-  // Calcular el valor de un KPI usando el KpiCalculator
-  async calculateKpi(
-    kpiId: string,
-    variables: Record<string, number>,
-  ): Promise<number> {
-    const kpi = await this.getKpiById(kpiId);
-    try {
-      return KpiCalculator.calculate(kpi.formula, variables); // Calcula usando el helper
-    } catch (error) {
-      throw new BadRequestException(
-        `Error al calcular el KPI: ${error.message}`,
-      );
-    }
+  private async recalculateAggregate(
+    calculationId: string,
+    sourceCollection: string,
+    targetCollection: string,
+    targetKey: string,
+    getValue: (doc: any) => number, // Función para extraer el valor relevante
+  ): Promise<void> {
+    const sourceRef = this.firestore
+      .collection('calculations')
+      .doc(calculationId)
+      .collection(sourceCollection);
+
+    const snapshot = await sourceRef.get();
+    if (snapshot.empty) return;
+
+    const values = snapshot.docs.map((doc) => getValue(doc.data()));
+
+    const total = values.reduce((sum, value) => sum + value, 0);
+    const count = values.length;
+    const average = count > 0 ? total / count : 0;
+
+    await this.updateAggregate(
+      calculationId,
+      targetCollection,
+      targetKey,
+      average,
+    );
   }
 
-  // Actualizar el valor actual de un KPI
-  async updateKpiValue(id: string, variables: Record<string, number>) {
-    const kpiData = await this.getKpiById(id);
-    try {
-      const newValue = KpiCalculator.calculate(kpiData.formula, variables);
-      await this.firestore
-        .collection('kpis')
-        .doc(id)
-        .update({ currentValue: newValue });
-      return { id, currentValue: newValue };
-    } catch (error) {
-      throw new BadRequestException(
-        `Error al actualizar el KPI: ${error.message}`,
-      );
-    }
+  // Recalcula el promedio para un periodo basado en la subcolección anterior
+  private async recalculatePeriodAggregate(
+    calculationId: string,
+    sourceCollection: string,
+    targetCollection: string,
+    targetKey: string,
+  ): Promise<void> {
+    const ref = this.firestore
+      .collection('calculations')
+      .doc(calculationId)
+      .collection(sourceCollection);
+
+    const snapshot = await ref.get();
+    if (snapshot.empty) return;
+
+    const sourceValues = snapshot.docs.map((doc) => doc.data().average || 0);
+
+    const total = sourceValues.reduce((sum, value) => sum + value, 0);
+    const count = sourceValues.length;
+    const average = count > 0 ? total / count : 0;
+
+    await this.updateAggregate(
+      calculationId,
+      targetCollection,
+      targetKey,
+      average,
+    );
   }
 
-  // Obtener todos los KPIs
-  async getAllKpis(
-    filters: {
-      name?: string;
-      branchOffice?: string;
-      startDate?: string;
-      endDate?: string;
-    } = {},
-  ) {
-    let query: FirebaseFirestore.Query = this.firestore.collection('kpis');
+  // Obtiene la semana inicial de un año
+  private getWeekNumber(date: Date): number {
+    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+    const pastDaysOfYear =
+      (date.getTime() - firstDayOfYear.getTime()) / (24 * 60 * 60 * 1000);
+    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  }
 
-    if (filters.name) {
-      query = query.where('name', '==', filters.name);
-    }
-    if (filters.branchOffice) {
-      query = query.where('branchOffice', '==', filters.branchOffice);
-    }
-    if (filters.startDate && filters.endDate) {
-      const start = new Date(filters.startDate);
-      const end = new Date(filters.endDate);
-      query = query
-        .where('createdAt', '>=', start)
-        .where('createdAt', '<=', end);
-    }
+  // Obtiene el trimestre basado en el mes
+  private getQuarter(date: Date): number {
+    return Math.floor(date.getMonth() / 3) + 1;
+  }
 
-    const snapshot = await query.get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  // Obtiene el semestre basado en el mes
+  private getSemester(date: Date): number {
+    return date.getMonth() < 6 ? 1 : 2;
   }
 }
