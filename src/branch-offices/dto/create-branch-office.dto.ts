@@ -1,23 +1,19 @@
-import { IsNotEmpty, IsString, IsObject } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsNumber } from 'class-validator';
 
 export class CreateBranchOfficeDto {
-  @ApiProperty({
-    description: 'Name of the branch office',
-    example: 'Main Office',
-  })
-  @IsNotEmpty()
   @IsString()
+  @IsNotEmpty()
   name: string;
 
-  @ApiProperty({
-    description: 'Location coordinates of the branch office',
-    example: { latitude: -8.109052, longitude: -79.021534 },
-  })
+  @IsString()
   @IsNotEmpty()
-  @IsObject()
-  location: {
-    latitude: number;
-    longitude: number;
-  };
+  address: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  latitude: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  longitude: number;
 }

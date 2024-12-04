@@ -1,14 +1,15 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateSupplyDto {
-  @ApiProperty({ description: 'Name of the supply', example: 'Screwdriver' })
-  @IsNotEmpty()
   @IsString()
+  @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ description: 'Unit of measurement', example: 'Unit' })
   @IsNotEmpty()
-  @IsString()
-  unit: string;
+  @IsEnum(['kg', 'l', 'm', 'm2', 'm3', 'u'], {
+    message:
+      'La unidad debe tomar uno de los siguientes valores: kg, l, m, m2, m3, u',
+  })
+  unit: 'kg' | 'l' | 'm' | 'm2' | 'm3' | 'u';
 }

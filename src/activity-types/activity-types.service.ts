@@ -1,176 +1,130 @@
 import {
-  Injectable,
-  ConflictException,
-  Inject,
-  NotFoundException,
   BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
 } from '@nestjs/common';
-import { Firestore } from '@google-cloud/firestore';
-import * as admin from 'firebase-admin';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Subject } from 'rxjs';
+import { ActivityType } from './activity-type.entity';
 import { CreateActivityTypeDto } from './dto/create-activity-type.dto';
 import { UpdateActivityTypeDto } from './dto/update-activity-type.dto';
 
 @Injectable()
 export class ActivityTypesService {
-  private firestore: admin.firestore.Firestore;
+  constructor(
+    @InjectRepository(ActivityType)
+    private readonly activityTypeRepository: Repository<ActivityType>,
+  ) {}
 
-  constructor(@Inject('FIREBASE_ADMIN') private readonly firebaseAdmin: any) {
-    this.firestore = this.firebaseAdmin.firestore();
-  }
+  private activityTypeChanges$ = new Subject<ActivityType[]>();
 
-  // Obtener todos los tipos de actividades
-  // async getAllActivityTypes() {
-  //   const snapshot = await this.firestore.collection('activityTypes').get();
-  //   return snapshot.docs.map((doc) => ({
-  //     id: doc.id,
-  //     ...(doc.data() as any), // Mapeamos correctamente los campos
-  //   }));
-  // }
-
-  async getActivityTypes() {
-    const activityTypesSnapshot = await this.firestore
-      .collection('activityTypes')
-      .get();
-    const activityTypes = activityTypesSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    return activityTypes;
-  }
-
-  // Búsqueda por coincidencia en nombre, descripción y neededSupplies
-  async searchActivityTypes(term: string) {
-    const snapshot = await this.firestore.collection('activityTypes').get();
-    const lowerTerm = term.toLowerCase();
-
-    const activityTypes = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as any),
-    }));
-
-    const filtered = activityTypes.filter(
-      (activityType) =>
-        activityType.name.toLowerCase().includes(lowerTerm) ||
-        activityType.description.toLowerCase().includes(lowerTerm) ||
-        activityType.neededSupplies.some((supply: string) =>
-          supply.toLowerCase().includes(lowerTerm),
-        ),
-    );
-
-    return filtered;
-  }
-
-  // Obtener tipo de actividad por ID
-  async getActivityTypeById(activityTypeId: string) {
-    const activityType = await this.firestore
-      .collection('activityTypes')
-      .doc(activityTypeId)
-      .get();
-
-    if (!activityType.exists) {
-      throw new NotFoundException('Activity type not found');
-    }
-
-    return { id: activityType.id, ...activityType.data() };
-  }
-
-  // Crear un ActivityType verificando que el nombre no exista
-  async createActivityType(createActivityTypeDto: CreateActivityTypeDto) {
-    const { name, description, neededSupplies } = createActivityTypeDto;
-
-    // Verificar si ya existe un tipo de actividad con el mismo nombre
-    const existingActivityType = await this.firestore
-      .collection('activityTypes')
-      .where('name', '==', name)
-      .get();
-
-    if (!existingActivityType.empty) {
+  async createActivityType(
+    createActivityTypeDto: CreateActivityTypeDto,
+  ): Promise<ActivityType> {
+    const existingActivityType = await this.activityTypeRepository.findOne({
+      where: { name: createActivityTypeDto.name },
+    });
+    if (existingActivityType) {
       throw new ConflictException(
-        `Activity type with the name "${name}" already exists.`,
+        'A activity type with this name already exists',
       );
     }
 
-    // Verificar supplies (omito para mantener el enfoque)
-    // ...
-
-    const activityTypeRef = await this.firestore
-      .collection('activityTypes')
-      .add({
-        name,
-        description,
-        neededSupplies,
-        createdAt: new Date(),
-      });
-
-    return { id: activityTypeRef.id, name, description, neededSupplies };
-  }
-
-  // Actualizar un ActivityType con verificación de nombres únicos
-  async updateActivityType(id: string, updateData: UpdateActivityTypeDto) {
-    const activityTypeRef = this.firestore.collection('activityTypes').doc(id);
-    const activityTypeDoc = await activityTypeRef.get();
-
-    if (!activityTypeDoc.exists) {
-      throw new NotFoundException('Activity type not found');
+    if (
+      createActivityTypeDto.regular &&
+      createActivityTypeDto.estimate === undefined
+    ) {
+      throw new BadRequestException(
+        'Estimate is required for regular activities',
+      );
     }
 
-    // Si se está actualizando el nombre, verificar que no exista otro con el mismo nombre
-    if (updateData.name) {
-      const existingActivityType = await this.firestore
-        .collection('activityTypes')
-        .where('name', '==', updateData.name)
-        .get();
+    const activityType = this.activityTypeRepository.create(
+      createActivityTypeDto,
+    );
+    return await this.activityTypeRepository.save(activityType);
+  }
 
-      if (
-        !existingActivityType.empty &&
-        existingActivityType.docs[0].id !== id
-      ) {
+  async getAllActivityTypes(): Promise<ActivityType[]> {
+    return await this.activityTypeRepository.find({
+      relations: ['activityTypeSupplies', 'assignments'],
+    });
+  }
+
+  async getActivityTypeById(id: number): Promise<ActivityType> {
+    const activityType = await this.activityTypeRepository.findOne({
+      where: { id },
+      relations: ['activityTypeSupplies', 'assignments'],
+    });
+
+    if (!activityType) {
+      throw new NotFoundException(`ActivityType with ID ${id} not found`);
+    }
+
+    return activityType;
+  }
+
+  async updateActivityType(
+    id: number,
+    updateActivityTypeDto: UpdateActivityTypeDto,
+  ): Promise<ActivityType> {
+    const activityType = await this.getActivityTypeById(id);
+    if (!activityType) {
+      throw new NotFoundException(`ActivityType with ID ${id} not found`);
+    }
+
+    if (
+      updateActivityTypeDto.name &&
+      updateActivityTypeDto.name !== activityType.name
+    ) {
+      const existingActivityType = await this.activityTypeRepository.findOne({
+        where: { name: updateActivityTypeDto.name },
+      });
+      if (existingActivityType) {
         throw new ConflictException(
-          `Activity type with the name "${updateData.name}" already exists.`,
+          'A activity type with this name already exists',
         );
       }
     }
 
-    // Filtramos solo los campos que realmente deben actualizarse
-    const fieldsToUpdate: Partial<UpdateActivityTypeDto> = {};
-    if (updateData.name) fieldsToUpdate.name = updateData.name;
-    if (updateData.description)
-      fieldsToUpdate.description = updateData.description;
-    if (updateData.neededSupplies)
-      fieldsToUpdate.neededSupplies = updateData.neededSupplies;
-
-    // Si no hay nada que actualizar, lanzar un error
-    if (Object.keys(fieldsToUpdate).length === 0) {
-      throw new BadRequestException('No fields to update');
+    // Verificar si estimate es requerido y válido
+    if (updateActivityTypeDto.estimate !== undefined) {
+      if (typeof updateActivityTypeDto.estimate !== 'number') {
+        throw new BadRequestException('Estimate must be a valid number');
+      }
+      if (updateActivityTypeDto.regular === false) {
+        throw new BadRequestException(
+          'Cannot assign estimate if regular is false',
+        );
+      }
+      // Asignar regular como true si se proporciona estimate
+      updateActivityTypeDto.regular = true;
     }
 
-    await activityTypeRef.update(fieldsToUpdate); // Actualizamos solo los campos válidos
-    return { id, ...fieldsToUpdate };
+    // Asegurarse de que estimate sea nulo si regular es falso
+    if (updateActivityTypeDto.regular === false) {
+      updateActivityTypeDto.estimate = null;
+    }
+
+    Object.assign(activityType, updateActivityTypeDto);
+    return await this.activityTypeRepository.save(activityType);
   }
 
-  // Eliminar ActivityType solo si no está en uso
-  async deleteActivityType(id: string) {
-    const activityTypeRef = this.firestore.collection('activityTypes').doc(id);
-    const activityTypeDoc = await activityTypeRef.get();
+  async deleteActivityType(id: number): Promise<void> {
+    const activityType = await this.getActivityTypeById(id); // Validar existencia
 
-    if (!activityTypeDoc.exists) {
-      throw new NotFoundException('Activity type not found');
-    }
-
-    // Verificar si el ActivityType está en uso en alguna actividad
-    const activitiesUsingType = await this.firestore
-      .collection('activities')
-      .where('activityType', '==', id)
-      .get();
-
-    if (!activitiesUsingType.empty) {
+    // Verificar si hay relaciones activas
+    if (
+      activityType.activityTypeSupplies.length > 0 ||
+      activityType.assignments.length > 0
+    ) {
       throw new BadRequestException(
-        'Cannot delete activity type because it is in use by one or more activities.',
+        `Cannot delete ActivityType with active relationships`,
       );
     }
 
-    // Si no está en uso, eliminar el ActivityType
-    await activityTypeRef.delete();
-    return { message: `Activity type with ID ${id} deleted successfully` };
+    await this.activityTypeRepository.delete(id);
   }
 }

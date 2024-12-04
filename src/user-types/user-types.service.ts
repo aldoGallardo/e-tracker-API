@@ -1,38 +1,52 @@
-import { Injectable, Inject, BadRequestException } from '@nestjs/common';
-import { Firestore } from '@google-cloud/firestore';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { UserType } from './user-type.entity';
+import { CreateUserTypeDto } from './dto/create-user-type.dto';
+import { UpdateUserTypeDto } from './dto/update-user-type.dto';
 
 @Injectable()
 export class UserTypesService {
-  private readonly firestore: Firestore;
+  constructor(
+    @InjectRepository(UserType)
+    private userTypeRepository: Repository<UserType>,
+  ) {}
 
-  constructor(@Inject('FIREBASE_ADMIN') private readonly firebaseAdmin: any) {
-    this.firestore = this.firebaseAdmin.firestore();
+  // Crear un nuevo tipo de usuario
+  async create(createUserTypeDto: CreateUserTypeDto): Promise<UserType> {
+    const userType = this.userTypeRepository.create(createUserTypeDto);
+    return this.userTypeRepository.save(userType);
   }
 
-  async createUserType(createUserTypeDto: { name: string }) {
-    const userTypeRef = await this.firestore.collection('userTypes').add({
-      name: createUserTypeDto.name,
+  // Obtener todos los tipos de usuario
+  async findAll(): Promise<UserType[]> {
+    return this.userTypeRepository.find({ relations: ['users'] });
+  }
+
+  // Obtener un tipo de usuario por ID
+  async findOne(id: number): Promise<UserType> {
+    return this.userTypeRepository.findOne({
+      where: { id },
+      relations: ['users'],
     });
-    return { id: userTypeRef.id, name: createUserTypeDto.name };
   }
 
-  async getAllUserTypes() {
-    const snapshot = await this.firestore.collection('userTypes').get();
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-  }
-
-  async deleteUserType(id: string) {
-    const userTypeRef = this.firestore.collection('userTypes').doc(id);
-    const userType = await userTypeRef.get();
-
-    if (!userType.exists) {
-      throw new BadRequestException('Tipo de usuario no encontrado');
+  // Actualizar un tipo de usuario
+  async update(
+    id: number,
+    updateUserTypeDto: UpdateUserTypeDto,
+  ): Promise<UserType> {
+    const userType = await this.userTypeRepository.findOne({ where: { id } });
+    if (!userType) {
+      throw new Error('UserType not found');
     }
+    Object.assign(userType, updateUserTypeDto);
+    return this.userTypeRepository.save(userType);
+  }
 
-    await userTypeRef.delete();
-    return { id };
+  // Eliminar un tipo de usuario
+  async remove(id: number): Promise<void> {
+    const userType = await this.userTypeRepository.findOne({ where: { id } });
+    await this.userTypeRepository.remove(userType);
   }
 }

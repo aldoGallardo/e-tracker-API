@@ -1,9 +1,19 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateUserTypeDto {
-  @ApiProperty({ description: 'Name of the user type', example: 'Admin' })
-  @IsString()
   @IsNotEmpty()
+  @IsString()
   name: string;
+
+  @IsOptional()
+  @IsEnum(['active', 'inactive'], {
+    message:
+      'El estado debe ser uno de los siguientes valores: active, inactive',
+  })
+  status: string;
+
+  @IsNotEmpty()
+  @IsString()
+  description: string;
 }
