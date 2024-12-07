@@ -8,7 +8,7 @@ import {
 import { User } from '../users/user.entity';
 import { ActivityType } from '../activity-types/activity-type.entity';
 import { AssignedSupply } from '../assigned-supplies/assigned-supply.entity';
-import { AssignmentDetail } from 'src/assignment-details/assignment-detail.entity';
+import { BranchOffice } from 'src/branch-offices/branch-office.entity';
 
 @Entity('assignments')
 export class Assignment {
@@ -37,10 +37,10 @@ export class Assignment {
   @Column()
   orderNumber: string;
 
-  @Column()
+  @Column({ type: 'decimal', precision: 18, scale: 15 })
   latitude: number;
 
-  @Column()
+  @Column({ type: 'decimal', precision: 18, scale: 15 })
   longitude: number;
 
   @Column()
@@ -67,11 +67,8 @@ export class Assignment {
   @ManyToOne(() => ActivityType, (activityType) => activityType.assignments)
   activityType: ActivityType; // Relación con el tipo de actividad
 
-  @OneToMany(
-    () => AssignmentDetail,
-    (assignmentDetail) => assignmentDetail.assignment,
-  )
-  assignmentDetails: AssignmentDetail[]; // Relación con los detalles de la asignación
+  @ManyToOne(() => BranchOffice, (branchOffice) => branchOffice.assignments)
+  branchOffice: BranchOffice; // Relación con la sucursal
 
   @OneToMany(
     () => AssignedSupply,

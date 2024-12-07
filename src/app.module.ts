@@ -11,13 +11,12 @@ import { AssignmentsModule } from './assignments/assignments.module';
 import { UserTypesModule } from './user-types/user-types.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AssignedSuppliesModule } from './assigned-supplies/assigned-supplies.module';
-import { AssignmentDetailsModule } from './assignment-details/assignment-details.module';
 import { ActivityTypeSuppliesModule } from './activity-type-supplies/activity-type-supplies.module';
 import { ObjectivesModule } from './objectives/objectives.module';
 import { DimensionsModule } from './dimensions/dimensions.module';
-import { KeyResult } from './key-results/key-result.entity';
 import { KeyResultsModule } from './key-results/key-results.module';
 import { CalculationModule } from './calculation/calculation.module';
+import { AssistanceModule } from './assistance/assistance.module';
 
 @Module({
   imports: [
@@ -43,12 +42,12 @@ import { CalculationModule } from './calculation/calculation.module';
     UserTypesModule,
     DashboardModule,
     AssignedSuppliesModule,
-    AssignmentDetailsModule,
     ActivityTypeSuppliesModule,
     ObjectivesModule,
     DimensionsModule,
     KeyResultsModule,
     CalculationModule,
+    AssistanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

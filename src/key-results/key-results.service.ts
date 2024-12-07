@@ -23,7 +23,7 @@ export class KeyResultsService {
   async createKeyResult(
     createKeyResultDto: CreateKeyResultDto,
   ): Promise<KeyResult> {
-    const { method, target, date, objectiveId, dimensionId } =
+    const { method, goalValue, goalDate, objectiveId, dimensionId } =
       createKeyResultDto;
 
     const objective = await this.objectiveRepository.findOneBy({
@@ -42,8 +42,8 @@ export class KeyResultsService {
 
     const keyResult = this.keyResultRepository.create({
       method,
-      target,
-      date: new Date(date),
+      goalValue,
+      goalDate: new Date(goalDate),
       objective,
       dimension,
     });
@@ -79,9 +79,9 @@ export class KeyResultsService {
     if (updateKeyResultDto.method !== undefined)
       keyResult.method = updateKeyResultDto.method;
     if (updateKeyResultDto.target !== undefined)
-      keyResult.target = updateKeyResultDto.target;
+      keyResult.goalValue = updateKeyResultDto.target;
     if (updateKeyResultDto.date !== undefined)
-      keyResult.date = new Date(updateKeyResultDto.date);
+      keyResult.goalDate = new Date(updateKeyResultDto.date);
 
     if (updateKeyResultDto.objectiveId) {
       const objective = await this.objectiveRepository.findOneBy({

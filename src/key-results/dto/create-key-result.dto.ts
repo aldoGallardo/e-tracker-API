@@ -12,11 +12,11 @@ export class CreateKeyResultDto {
   method: CalculationMethodsEnum;
 
   @IsDecimal({ decimal_digits: '0,2' })
-  target: number;
+  goalValue: number;
 
   @IsNotEmpty()
   @IsDateString()
-  date: Date;
+  goalDate: Date;
 
   @IsNotEmpty()
   @IsNumber()

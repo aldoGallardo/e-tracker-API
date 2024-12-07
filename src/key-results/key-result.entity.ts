@@ -1,36 +1,34 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  OneToMany,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
 import { Objective } from '../objectives/objective.entity';
 import { Dimension } from '../dimensions/dimension.entity';
-import { AssignmentDetail } from '../assignment-details/assignment-detail.entity';
+import { Advance } from './advance.entity'; // Importamos Advance
+
 @Entity('key_results')
 export class KeyResult {
   @PrimaryGeneratedColumn()
   id: number;
 
   @Column()
-  method: string;
+  method: string; // Método utilizado para calcular el resultado clave
 
   @Column({ type: 'decimal', precision: 5, scale: 2 })
-  target: number; // Meta porcentual
+  goalValue: number; // Valor objetivo o meta porcentual
 
   @Column({ type: 'timestamp' })
-  date: Date;
+  initialDate: Date; // Fecha de inicio del objetivo
+
+  @Column({ type: 'timestamp' })
+  goalDate: Date; // Fecha en la que se debe alcanzar el objetivo
 
   @ManyToOne(() => Objective, (objective) => objective.keyResults)
   objective: Objective; // Relación con el objetivo al que pertenece este resultado clave
 
   @ManyToOne(() => Dimension, (dimension) => dimension.keyResults)
-  dimension: Dimension;
+  dimension: Dimension; // Relación con la dimensión de medición
 
-  @OneToMany(
-    () => AssignmentDetail,
-    (assignmentDetail) => assignmentDetail.keyResult,
-  )
-  assignmentDetails: AssignmentDetail[]; // Relación con los detalles de asignación que lo calculan
+  @ManyToOne(() => Advance, (advance) => advance.keyResults) // Relación con Advance
+  advance: Advance; // Relación con el avance asociado
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0 })
+  progress: number; // Progreso calculado basado en el avance
 }

@@ -8,6 +8,8 @@ import {
 import { BranchOffice } from '../branch-offices/branch-office.entity';
 import { UserType } from '../user-types/user-type.entity';
 import { Assignment } from '../assignments/assignment.entity';
+import { Assistance } from 'src/assistance/entities/assistance.entity';
+import { Historical } from 'src/key-results/historical.entity';
 
 @Entity('users')
 export class User {
@@ -53,4 +55,10 @@ export class User {
   // Relación inversa para asignaciones donde el usuario es el asignador
   @OneToMany(() => Assignment, (assignment) => assignment.assignFrom)
   assignedFromAssignments: Assignment[];
+
+  @OneToMany(() => Assistance, (assistance) => assistance.user)
+  assistance: Assistance[];
+
+  @OneToMany(() => Historical, (historical) => historical.user)
+  historical: Historical[];
 }

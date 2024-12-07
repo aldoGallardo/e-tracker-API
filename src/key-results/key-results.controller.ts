@@ -45,4 +45,6 @@ export class KeyResultsController {
   deleteKeyResult(@Param('id') id: number): Promise<void> {
     return this.keyResultsService.deleteKeyResult(id);
   }
+
+
 }
